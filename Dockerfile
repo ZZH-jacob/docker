@@ -39,7 +39,7 @@ RUN wget https://aka.ms/downloadazcopy-v10-linux \
     && rm -f downloadazcopy-v10-linux \
     && rm -rf ./azcopy_linux_amd64_*/
 
-# # install blobfuse
+# install blobfuse
 RUN wget https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb \
     && dpkg -i packages-microsoft-prod.deb \
     && apt-get update \
@@ -86,6 +86,7 @@ SHELL ["/bin/bash", "--login", "-c"]
 #     && git checkout 9263bc8 \
 #     && pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./
 # install sceneprior
+
 RUN cd / \
     && git clone https://github.com/yinyunie/ScenePriors.git \
     && cd ScenePriors \
@@ -93,13 +94,10 @@ RUN cd / \
     && conda init bash \
     && conda activate sceneprior \
     && echo "conda activate sceneprior" >> ~/.bashrc \
-    # && cd external/fast_transformers \
-    # && python setup.py build_ext --inplace \
-    # && cd ../.. \
     && conda install -c fvcore -c iopath -c conda-forge fvcore iopath \
     && pip install --no-index --no-cache-dir pytorch3d -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py38_cu113_pyt1110/download.html \
-    && cd external/pytorch3d \
-    && pip install -e . 
+    && cd / \
+    && rm -rf ./ScenePriors
 
 RUN apt-get install -y ffmpeg
 
