@@ -1,108 +1,82 @@
-FROM nvidia/cuda:11.3.1-cudnn8-devel-ubuntu20.04
+FROM nvidia/cuda:12.1.0-cudnn8-devel-ubuntu20.04
 
-LABEL MAINTAINER="zh_zheng2003@outlook.com"
+LABEL maintainer="zh_zheng2003@outlook.com"
 
-USER root
+# 环境变量集中定义
+ENV DEBIAN_FRONTEND=noninteractive \
+    PATH="/opt/conda/bin:/usr/local/cuda-12.1/bin:${PATH}" \
+    CUDA_HOME=/usr/local/cuda \
+    LD_LIBRARY_PATH="/usr/local/cuda-12.1/lib64:${LD_LIBRARY_PATH}" \
+    SHELL=/bin/bash
 
-ENV DEBIAN_FRONTEND=noninteractive
+# 系统依赖安装 - 合并所有 apt 操作并清理缓存
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget curl man git less openssl libssl-dev unzip unar \
+    build-essential aria2 openssh-server tmux vim ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN set -x \
-    && apt update \
-    && apt-get -y install wget curl man git less openssl libssl-dev unzip unar build-essential aria2\
-    && apt install -y openssh-server 
-
-RUN set -x \
-    && apt -y install tmux \
-    # && git config --global http.proxy http://127.0.0.1:7890 \
-    && wget https://github.com/ninja-build/ninja/releases/download/v1.10.2/ninja-linux.zip\
+# 安装 ninja
+RUN wget -q https://github.com/ninja-build/ninja/releases/download/v1.10.2/ninja-linux.zip \
     && unzip ninja-linux.zip -d /usr/local/bin/ \
-    && rm -rf ninja-linux.zip \
-    && update-alternatives --install /usr/bin/ninja ninja /usr/local/bin/ninja 1 --force \
-    # && git clone https://github.com/chxuan/vimplus.git ~/.vimplus \
-    # && cd ~/.vimplus \
-    # && ./install.sh
-    && git clone --depth=1 https://github.com/amix/vimrc.git ~/.vim_runtime \
+    && rm -f ninja-linux.zip \
+    && update-alternatives --install /usr/bin/ninja ninja /usr/local/bin/ninja 1 --force
+
+# 安装 vim 配置
+RUN git clone --depth=1 https://github.com/amix/vimrc.git ~/.vim_runtime \
     && sh ~/.vim_runtime/install_awesome_vimrc.sh \
     && echo "set number" >> ~/.vimrc
 
-ENV PATH /opt/conda/bin:$PATH
-ENV PATH /usr/local/cuda-11.3/bin:$PATH
-ENV CUDA_HOME /usr/local/cuda
-ENV LD_LIBRARY_PATH "/usr/local/cuda-11.3/lib64:$LD_LIBRARY_PATH"
-
-# install azcopy
-RUN wget https://aka.ms/downloadazcopy-v10-linux \
-    && tar -xvf downloadazcopy-v10-linux \
-    && rm -f /usr/bin/azcopy \
+# 安装 azcopy
+RUN wget -q https://aka.ms/downloadazcopy-v10-linux -O azcopy.tar \
+    && tar -xf azcopy.tar \
     && cp ./azcopy_linux_amd64_*/azcopy /usr/bin/ \
     && chmod 755 /usr/bin/azcopy \
-    && rm -f downloadazcopy-v10-linux \
-    && rm -rf ./azcopy_linux_amd64_*/
+    && rm -rf azcopy.tar ./azcopy_linux_amd64_*/
 
-# install blobfuse
-RUN wget https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb \
+# 安装 blobfuse
+RUN wget -q https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb \
     && dpkg -i packages-microsoft-prod.deb \
     && apt-get update \
-    && apt-get install -y blobfuse
+    && apt-get install -y --no-install-recommends blobfuse \
+    && rm -f packages-microsoft-prod.deb \
+    && rm -rf /var/lib/apt/lists/*
 
-# install conda
-RUN cd /root \
-    && wget https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/Miniconda3-latest-Linux-x86_64.sh \
-    && sh Miniconda3-latest-Linux-x86_64.sh -b -p /opt/conda \
-    && rm -f Miniconda3-latest-Linux-x86_64.sh \
+# 安装 conda
+RUN wget -q https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh \
+    && bash miniconda.sh -b -p /opt/conda \
+    && rm -f miniconda.sh \
     && ln -s /opt/conda/etc/profile.d/conda.sh /etc/profile.d/conda.sh \
     && echo ". /opt/conda/etc/profile.d/conda.sh" >> ~/.bashrc \
-    && . /root/.bashrc 
+    && /opt/conda/bin/conda clean -afy
 
 SHELL ["/bin/bash", "--login", "-c"]
 
-# install fairseq
-# RUN conda create -n fairseq python=3.9 -y \
-#     && conda init bash \
-#     && conda activate fairseq \
-#     && conda install numpy matplotlib scipy -y \
-#     && echo "conda activate fairseq" >> ~/.bashrc \
-#     && conda install pytorch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 cudatoolkit=11.3 -c pytorch -y \
-#     && pip install packaging \
-#     && pip install editdistance \
-#     && pip install gpustat \
-#     && pip install tensorboard \
-#     && pip install wandb \
-#     && pip install einops \
-#     && pip install debugpy \
-#     && pip install soundfile \
-#     && apt-get install -y libsndfile1-dev \
-#     && cd / \
-#     && git clone https://github.com/facebookresearch/fairseq.git \
-#     && cd fairseq \
-#     && git checkout 336c26a5 \
-#     && pip install --editable ./ \
-#     && conda install -c conda-forge npy-append-array -y \
-#     && pip install librosa pandas sentencepiece \
-#     # install apex
-#     && cd / \
-#     && git clone https://github.com/NVIDIA/apex.git \
-#     && cd apex \
-#     && git checkout 9263bc8 \
-#     && pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./
-# install sceneprior
+# 创建 conda 环境并安装 Python 依赖
+RUN conda init bash \
+    && conda config --remove channels defaults || true \
+    && conda config --add channels conda-forge \
+    && conda config --set channel_priority strict \
+    && conda create -n ditmem python=3.10 -c conda-forge --override-channels -y \
+    && conda activate ditmem \
+    && echo "conda activate ditmem" >> ~/.bashrc \
+    # 安装 PyTorch
+    && pip install --no-cache-dir \
+        torch==2.5.0 torchvision==0.20.0 torchaudio==2.5.0 \
+        --index-url https://download.pytorch.org/whl/cu121 \
+    # 安装其他依赖 - 合并所有 pip install
+    && pip install --no-cache-dir \
+        transformers==4.57.1 accelerate==1.10.1 deepspeed==0.18.0 \
+        peft==0.17.1 triton==3.1.0 opencv-python imageio imageio-ffmpeg \
+        pillow einops safetensors tokenizers==0.22.1 sentencepiece \
+        hf-xet==1.1.10 modelscope==1.31.0 faiss-cpu==1.12.0 \
+        numpy pandas tqdm loguru easydict hjson PyYAML huggingface-hub \
+        typing_extensions packaging ftfy gradio streamlit cupy \
+        facexlib insightface onnxruntime-gpu \
+        wandb openai azure-identity nano_vectordb \
+    # 安装 flash-attn (需要 --no-build-isolation)
+    && pip install --no-cache-dir flash-attn==2.3.6 --no-build-isolation \
+    # 清理 conda 缓存
+    && conda clean -afy \
+    && rm -rf ~/.cache/pip
 
-RUN cd / \
-    && git clone https://github.com/yinyunie/ScenePriors.git \
-    && cd ScenePriors \
-    && conda env create -f environment.yml \
-    && conda init bash \
-    && conda activate sceneprior \
-    && echo "conda activate sceneprior" >> ~/.bashrc \
-    && conda install -c fvcore -c iopath -c conda-forge fvcore iopath \
-    && pip install --no-index --no-cache-dir pytorch3d -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py38_cu113_pyt1110/download.html \
-    && cd / \
-    && rm -rf ./ScenePriors
-
-RUN apt-get install -y ffmpeg
-
-RUN apt-get install -y vim \
-    && pip install packaging
-
-ENV SHELL=/bin/bash
-CMD [ "/bin/bash" ]
+CMD ["/bin/bash"]
